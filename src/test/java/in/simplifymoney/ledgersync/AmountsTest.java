@@ -45,4 +45,34 @@ class AmountsTest {
     void ignoresAMessageWithNoAmountAtAll() {
         assertEquals(null, Amounts.first("Your Swiggy order is on the way!"));
     }
+
+    // Regression test for INC-2026-09-11: a customer's ₹5 UPI debit was shown
+    // as a ₹92,213.10 spend. The old AMOUNT pattern required a decimal point,
+    // so "Rs.5" (no decimal) did not match and find() fell through to the
+    // next Rs figure with two decimals - the stated balance - instead.
+    @Test
+    void readsAWholeRupeeAmountInsteadOfTheLaterBalance() {
+        assertEquals(new BigDecimal("5.00"),
+                Amounts.first("Rs.5 debited from a/c **4821 on 04-07-26 at "
+                        + "07:19 to UPI/WATER CAN. Avl Bal: Rs.92,213.10. "
+                        + "Not you? Call 18002586161"));
+    }
+
+    // Same failure mode via a thousands-separated whole-rupee amount.
+    @Test
+    void readsAWholeRupeeAmountWithThousandsSeparator() {
+        assertEquals(new BigDecimal("8000.00"),
+                Amounts.first("Rs 8,000 debited from a/c **4821 on 05-07-26 "
+                        + "at 11:00 to IMPS/P2A/PARAG KAPOOR. Avl Bal: "
+                        + "Rs.80,071.04."));
+    }
+
+    // And via the ICICI "BalAvl" balance marker rather than HDFC's "Avl Bal".
+    @Test
+    void readsAWholeRupeeAmountBeforeAnIciciBalAvlMarker() {
+        assertEquals(new BigDecimal("5.00"),
+                Amounts.first("ICICI Bank Acct XX9075 Dr INR 5 on "
+                        + "23-Jul-2026 18:41; UPI/BARBER ref no "
+                        + "154245459403. BalAvl Rs 52,841.30"));
+    }
 }
