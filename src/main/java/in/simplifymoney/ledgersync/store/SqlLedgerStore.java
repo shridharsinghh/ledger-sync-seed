@@ -2,6 +2,7 @@ package in.simplifymoney.ledgersync.store;
 
 import in.simplifymoney.ledgersync.model.Category;
 import in.simplifymoney.ledgersync.model.Direction;
+import in.simplifymoney.ledgersync.model.Discrepancy;
 import in.simplifymoney.ledgersync.model.NormalizedTxn;
 import java.math.BigDecimal;
 import java.nio.file.Files;
@@ -127,6 +128,51 @@ public final class SqlLedgerStore implements LedgerStore, AutoCloseable {
         } catch (SQLException e) {
             throw new IllegalStateException("could not count the ledger", e);
         }
+    }
+
+    @Override
+    public void clear() {
+        try (Statement st = conn.createStatement()) {
+            st.execute("DELETE FROM ledger");
+            st.execute("DELETE FROM discrepancies");
+        } catch (SQLException e) {
+            throw new IllegalStateException("could not clear the ledger", e);
+        }
+    }
+
+    @Override
+    public void saveDiscrepancy(Discrepancy d) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO discrepancies(account_last4, occurred_at, amount, note)"
+                        + " VALUES (?,?,?,?)")) {
+            ps.setString(1, d.accountLast4());
+            ps.setString(2, d.occurredAt().toString());
+            ps.setBigDecimal(3, d.amount());
+            ps.setString(4, d.note());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("could not save discrepancy " + d, e);
+        }
+    }
+
+    @Override
+    public List<Discrepancy> discrepancies() {
+        List<Discrepancy> out = new ArrayList<>();
+        try (Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery(
+                     "SELECT account_last4, occurred_at, amount, note FROM discrepancies"
+                             + " ORDER BY occurred_at")) {
+            while (rs.next()) {
+                out.add(new Discrepancy(
+                        rs.getString(1),
+                        OffsetDateTime.parse(rs.getString(2)),
+                        rs.getBigDecimal(3).setScale(2),
+                        rs.getString(4)));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("could not read discrepancies", e);
+        }
+        return out;
     }
 
     public BigDecimal sumAmounts() {
